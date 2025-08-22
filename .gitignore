@@ -1,0 +1,8 @@
+# Compiled files
+*.beam
+
+# Erlang/OTP releases
+_build/
+.vscode/
+logs/
+*.log
