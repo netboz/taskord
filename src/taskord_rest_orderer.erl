@@ -16,6 +16,7 @@
     from_json/2
 ]).
 
+-ifdef(TEST).
 %% Exported for testing
 -export([
     validate_parse/1,
@@ -23,6 +24,7 @@
     tasks_to_bash_script/1,
     parse_tasks/2
 ]).
+-endif.
 
 %%--------------------------------------------------------------------
 %% @doc Initialize the handler
