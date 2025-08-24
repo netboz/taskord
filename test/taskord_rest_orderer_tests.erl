@@ -14,6 +14,24 @@ update_deps_remove_deps_test() ->
     Result = taskord_rest_orderer:update_deps(<<"task-1">>, Tasks, []),
     ?assertEqual([{<<"task-2">>, <<"echo">>, []}], Result).
 
+%% Test parse_tasks with valid input
+parse_tasks_valid_test() ->
+    Tasks = [
+        #{<<"name">> => <<"task-1">>, <<"command">> => <<"echo">>, <<"requires">> => []},
+        #{<<"name">> => <<"task-2">>, <<"command">> => <<"echo">>, <<"requires">> => [<<"task-1">>]}
+    ],
+    Result = taskord_rest_orderer:parse_tasks(Tasks, []),
+    ?assertEqual([{<<"task-1">>, <<"echo">>, []}, {<<"task-2">>, <<"echo">>, [<<"task-1">>]}], Result).
+
+%% Test parse_task stop with error when invalid task
+parse_tasks_invalid_test() ->
+    Tasks = [
+        #{<<"name">> => <<"task-1">>},
+        #{<<"name">> => <<"task-2">>, <<"command">> => <<"echo">>, <<"requires">> => [<<"task-1">>]}
+    ],
+    Result = taskord_rest_orderer:parse_tasks(Tasks, []),
+    ?assertEqual({error, #{error => <<"invalid_task">>, task => #{<<"name">> => <<"task-1">>}}}, Result).
+
 %% Test validate_parse with missing tasks key
 validate_parse_missing_tasks_test() ->
     Result = taskord_rest_orderer:validate_parse(#{foo => bar}),

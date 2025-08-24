@@ -20,7 +20,8 @@
 -export([
     validate_parse/1,
     update_deps/3,
-    tasks_to_bash_script/1
+    tasks_to_bash_script/1,
+    parse_tasks/2
 ]).
 
 %%--------------------------------------------------------------------
@@ -101,11 +102,15 @@ from_json(Req0, State) ->
 validate_parse(#{<<"tasks">> := Tasks}) when is_list(Tasks) ->
     % First parse the tasks to tuples, then sort them,
     % putting the ones with less deps first.
-    ParsedTasks = parse_tasks(Tasks, []),
-    %% Then do the real processing.
-    case process_tasks(ParsedTasks, []) of
-        {ok, Result} ->
-            {ok, Result};
+    case parse_tasks(Tasks, []) of
+        ParsedTasks when is_list(ParsedTasks) ->
+            %% Then do the real processing.
+            case process_tasks(ParsedTasks, []) of
+                {ok, Result} ->
+                    {ok, Result};
+                {error, Reason} ->
+                    {error, Reason}
+            end;
         {error, Reason} ->
             {error, Reason}
     end;
@@ -116,8 +121,10 @@ validate_parse(_Data) ->
 %%--------------------------------------------------------------------
 %% @doc Parse the json tasks into a list of tuple {Name, Command, Require}
 %%--------------------------------------------------------------------
--spec parse_tasks(list(), list({binary(), binary(), list(binary())})) -> list().
+-spec parse_tasks(list(), list({binary(), binary(), list(binary())})) -> list() | {error, map()}.
 parse_tasks([], Acc) ->
+    %% Sort tasks by length of requires list, shortest first
+    %% so Task with no deps comes first
     lists:sort(
         fun({_, _, ReqA}, {_, _, ReqB}) when is_list(ReqA), is_list(ReqB) ->
             length(ReqA) =< length(ReqB)
@@ -125,7 +132,14 @@ parse_tasks([], Acc) ->
         Acc
     );
 parse_tasks([#{<<"name">> := Name, <<"command">> := Command} = Task | OtherTasks], Acc) ->
-    parse_tasks(OtherTasks, [{Name, Command, maps:get(<<"requires">>, Task, [])} | Acc]).
+    parse_tasks(OtherTasks, [{Name, Command, maps:get(<<"requires">>, Task, [])} | Acc]);
+
+parse_tasks([InvalidTask | _OtherTasks], _Acc) ->
+    %% We prefer to cancel whole process in case of invalid
+    %% task; because of the dependencies the whole data structure
+    %% might be wrong.
+    logger:warning("Invalid task : ~p", [InvalidTask]),
+    {error, #{error => <<"invalid_task">>, task => InvalidTask}}.
 
 
 %%--------------------------------------------------------------------
@@ -147,11 +161,11 @@ process_tasks([{Name, Command, []} | Rest], Acc) ->
     UpdatedRest = update_deps(Name, Rest, []),
     TaskMap = #{<<"name">> => Name, <<"command">> => Command},
     process_tasks(UpdatedRest, [TaskMap | Acc]);
-%% Tasks were sorted upon length of requires list, at the end of parse tasks.
+%% Tasks were sorted upon length of requires list, at the end of parse_tasks.
 %% It means tasks ready to process should be at the beginning of the list.
 %% If there isn't, it means we have a missing dep or cycle
 process_tasks([{Name, _Command, Require} | _Rest], _Acc) when Require =/= [] ->
-    logger:warning("Missing deps or cycle: ~p", [{Name, Require}]),
+    logger:warning("Missing deps or cycle: Task ~p   Deps :~p", [Name, Require]),
     {error, #{error => missing_deps_or_cycle, task_name => Name, requires => Require}}.
 
 %%--------------------------------------------------------------------
@@ -166,6 +180,7 @@ update_deps(ValidatedDepName, Tasks, Acc) ->
     update_deps(ValidatedDepName, Tasks, [], Acc).
 
 update_deps(_ValidatedDepName, [], ReadyTasks, StillWaiting) ->
+    %% Put tasks now ready in front to be processed
     ReadyTasks ++ StillWaiting;
 update_deps(ValidatedDepName, [{Name, Command, Require} | Rest], ReadyTasks, StillWaiting) ->
     case lists:delete(ValidatedDepName, Require) of
