@@ -3,7 +3,7 @@
 Taskord is an Erlang application for ordering tasks with dependency management.
 
 ## Prerequisites
-- Erlang/OTP (25+ recommended)
+- Erlang/OTP (24+ recommended)
 - [rebar3](https://www.rebar3.org/) build tool
 
 ## Compile
